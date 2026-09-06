@@ -16,7 +16,9 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    # Exact versions only. The moving major tag (v1) must not start a release
+    # run: its name can never match the crate version the version job checks.
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:
