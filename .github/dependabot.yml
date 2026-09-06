@@ -4,6 +4,8 @@ updates:
   # package.json, no lockfile, and no JavaScript dependencies to update.
   - package-ecosystem: cargo
     directory: "/"
+    # Integration lands on develop first; main only moves through a release PR.
+    target-branch: develop
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -14,6 +16,7 @@ updates:
 
   - package-ecosystem: github-actions
     directory: "/"
+    target-branch: develop
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
