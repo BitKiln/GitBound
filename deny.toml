@@ -1,0 +1,34 @@
+# cargo-deny configuration. Run locally with:
+#   cargo install cargo-deny && cargo deny check
+
+[advisories]
+# Fail on any advisory in the RustSec database. Add an `ignore` entry with a
+# comment explaining the exposure if one is ever genuinely not applicable.
+yanked = "deny"
+ignore = []
+
+[licenses]
+# GitBound ships under MIT. Permissive licences only, so a release binary can
+# be redistributed without additional obligations.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

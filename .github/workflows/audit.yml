@@ -1,0 +1,57 @@
+name: Dependency advisories
+
+# cargo-deny runs inside ci.yml, which means advisories only surface when
+# somebody opens a pull request. A RUSTSEC advisory published during a quiet week
+# would go unnoticed until the next change. This runs it on a clock instead.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "deny.toml"
+      - "Cargo.lock"
+      - ".github/workflows/audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # So a new advisory opens an issue rather than only turning a run red on a
+      # page nobody is watching.
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: deny
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          command: check advisories bans sources
+
+      - name: Open an issue when an advisory is found
+        if: steps.deny.outcome == 'failure' && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="cargo-deny reported a dependency advisory"
+          # One open issue at a time: a daily cron would otherwise file a
+          # duplicate every morning until the advisory is resolved.
+          existing=$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "Issue #$existing is already open."
+            exit 0
+          fi
+          gh issue create --title "$title" \
+            --label dependencies \
+            --body "The scheduled \`cargo deny check\` run failed. See $RUN_URL"
+
+      - name: Fail the run
+        if: steps.deny.outcome == 'failure'
+        run: exit 1

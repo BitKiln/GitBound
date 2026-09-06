@@ -1,0 +1,12 @@
+/target/
+/graphify-out/
+/desktop/src-tauri/gen/
+/desktop/src-tauri/icons/android/
+/desktop/src-tauri/icons/ios/
+/desktop/src-tauri/icons/.gitkeep
+*.tmp
+
+# Built desktop binaries. Releases are published by .github/workflows/release.yml;
+# the repository is not a distribution channel.
+/gitbound-desktop.exe
+/gitbound-desktop.exe.sha256

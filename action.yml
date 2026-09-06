@@ -1,0 +1,242 @@
+name: GitBound
+description: >-
+  Verify commit identity, remote ownership, and signing policy for a repository,
+  and audit the authorship of a revision range.
+author: BitKiln
+
+branding:
+  icon: user-check
+  color: green
+
+inputs:
+  version:
+    description: >-
+      Release tag of GitBound to run, without the leading `v`, or `latest`.
+      Pin this in production so a new release cannot change what your gate
+      accepts.
+    required: false
+    default: latest
+  command:
+    description: "`verify`, `audit`, or `both`."
+    required: false
+    default: verify
+  range:
+    description: >-
+      Revision range for `audit`. Defaults to the pull request's own commits
+      when the workflow was triggered by a pull request, and to `HEAD` otherwise.
+    required: false
+    default: ""
+  format:
+    description: "Report format written to stdout: auto, human, github, json, sarif, junit, markdown."
+    required: false
+    default: auto
+  policy:
+    description: "Path to a policy file. Defaults to `.gitbound.toml` at the repository root when one is committed."
+    required: false
+    default: ""
+  no-policy:
+    description: "Ignore any committed policy file."
+    required: false
+    default: "false"
+  require-policy:
+    description: >-
+      Fail when the repository commits no policy. A repository without one has
+      no rule to break, so the gate would otherwise report success having
+      checked nothing, and deleting the file would be enough to disable it.
+    required: false
+    default: "false"
+  offline:
+    description: >-
+      Skip the checks that need the network. A runner with no egress, or none
+      of GitHub CLI's credentials, cannot answer them, and an unanswered check
+      is fatal by design — so the alternative is not running the gate at all.
+      Everything local still runs.
+    required: false
+    default: "false"
+  enforce-signing:
+    description: "Fail when commit signing is not enabled, regardless of profile settings."
+    required: false
+    default: "false"
+  sarif-file:
+    description: "Write SARIF to this path as well. Leave empty to skip."
+    required: false
+    default: ""
+  fail-on:
+    description: "`failure` (default), `warning` to also fail on warnings and unverified checks, or `never` to report without failing."
+    required: false
+    default: failure
+  working-directory:
+    description: "Repository to inspect."
+    required: false
+    default: "."
+  token:
+    description: "Token used to download the release asset. The default job token is enough for a public release."
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  overall:
+    description: "`ok`, `warning`, or `failure`."
+    value: ${{ steps.run.outputs.overall }}
+  report:
+    description: "Path to the JSON report."
+    value: ${{ steps.run.outputs.report }}
+  sarif:
+    description: "Path to the SARIF report, when one was requested."
+    value: ${{ steps.run.outputs.sarif }}
+
+runs:
+  using: composite
+  steps:
+    # bash is available on every GitHub-hosted runner, Windows included, so one
+    # implementation covers all three platforms rather than three shells.
+    - name: Install GitBound
+      id: install
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        case "$RUNNER_OS" in
+          Linux)   target="x86_64-unknown-linux-gnu"; archive="tar.gz" ;;
+          macOS)
+            # Releases carry Apple Silicon only; see the matrix in release.yml.
+            # Saying so is better than letting `gh release download` fail with a
+            # pattern that matches nothing.
+            if [ "$RUNNER_ARCH" != "ARM64" ]; then
+              echo "::error::GitBound publishes macOS builds for Apple Silicon only. Use a macos-14 or newer runner."
+              exit 1
+            fi
+            target="aarch64-apple-darwin"; archive="tar.gz" ;;
+          Windows) target="x86_64-pc-windows-msvc"; archive="zip" ;;
+          *) echo "::error::unsupported runner OS $RUNNER_OS"; exit 1 ;;
+        esac
+
+        dir="$RUNNER_TEMP/gitbound"
+        mkdir -p "$dir"
+        asset="gitbound-${target}.${archive}"
+
+        if [ "$INPUT_VERSION" = "latest" ]; then
+          gh release download --repo "$GITHUB_ACTION_REPOSITORY" \
+            --pattern "$asset" --pattern "$asset.sha256" --dir "$dir" --clobber
+        else
+          gh release download "v${INPUT_VERSION#v}" --repo "$GITHUB_ACTION_REPOSITORY" \
+            --pattern "$asset" --pattern "$asset.sha256" --dir "$dir" --clobber
+        fi
+
+        # Verify before extracting. A hash that does not match means the asset is
+        # not the one this action expects, and running it anyway would defeat the
+        # point of a tool whose job is to refuse unverified things.
+        # macOS runners ship `shasum`, not `sha256sum`; release.yml writes the
+        # checksum file through the same fork, so the two stay in step.
+        if command -v sha256sum >/dev/null; then
+          ( cd "$dir" && sha256sum --check "$asset.sha256" )
+        else
+          ( cd "$dir" && shasum -a 256 --check "$asset.sha256" )
+        fi
+
+        if [ "$archive" = "zip" ]; then
+          unzip -q -o "$dir/$asset" -d "$dir"
+        else
+          tar -xzf "$dir/$asset" -C "$dir"
+        fi
+
+        binary="$dir/gitbound"
+        [ "$RUNNER_OS" = "Windows" ] && binary="$dir/gitbound.exe"
+        chmod +x "$binary" 2>/dev/null || true
+        echo "binary=$binary" >> "$GITHUB_OUTPUT"
+        "$binary" --version
+
+    - name: Run GitBound
+      id: run
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        BINARY: ${{ steps.install.outputs.binary }}
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_RANGE: ${{ inputs.range }}
+        INPUT_FORMAT: ${{ inputs.format }}
+        INPUT_POLICY: ${{ inputs.policy }}
+        INPUT_NO_POLICY: ${{ inputs.no-policy }}
+        INPUT_REQUIRE_POLICY: ${{ inputs.require-policy }}
+        INPUT_OFFLINE: ${{ inputs.offline }}
+        INPUT_ENFORCE_SIGNING: ${{ inputs.enforce-signing }}
+        INPUT_SARIF: ${{ inputs.sarif-file }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        set -uo pipefail
+
+        report="$RUNNER_TEMP/gitbound-report.json"
+        common=( --format "$INPUT_FORMAT" --output "json:$report" )
+        [ -n "$INPUT_POLICY" ] && common+=( --policy "$INPUT_POLICY" )
+        [ "$INPUT_NO_POLICY" = "true" ] && common+=( --no-policy )
+        [ "$INPUT_REQUIRE_POLICY" = "true" ] && common+=( --require-policy )
+        [ "$INPUT_ENFORCE_SIGNING" = "true" ] && common+=( --enforce-signing )
+        # `audit` reads the commit log and verifies signatures locally, so it
+        # has no network checks to skip and does not accept the flag. Appending
+        # it to `common` would make `command: audit` fail on a usage error.
+        verify_only=()
+        [ "$INPUT_OFFLINE" = "true" ] && verify_only+=( --offline )
+        if [ -n "$INPUT_SARIF" ]; then
+          common+=( --output "sarif:$INPUT_SARIF" )
+          echo "sarif=$INPUT_SARIF" >> "$GITHUB_OUTPUT"
+        fi
+
+        # A pull request's own commits are the interesting range; falling back to
+        # HEAD keeps `audit` meaningful on a push or a manual dispatch.
+        range="$INPUT_RANGE"
+        if [ -z "$range" ]; then
+          if [ -n "${BASE_SHA:-}" ]; then range="$BASE_SHA..HEAD"; else range="HEAD"; fi
+        fi
+
+        worst=0
+        run_one() {
+          "$BINARY" "$@"
+          code=$?
+          [ $code -gt $worst ] && worst=$code
+          return 0
+        }
+
+        case "$INPUT_COMMAND" in
+          verify) run_one verify "${common[@]}" ${verify_only[@]+"${verify_only[@]}"} ;;
+          audit)  run_one audit --range "$range" "${common[@]}" ;;
+          both)
+            run_one verify "${common[@]}" ${verify_only[@]+"${verify_only[@]}"}
+            # The second run overwrites the first report; keep both.
+            mv "$report" "$RUNNER_TEMP/gitbound-verify.json" 2>/dev/null || true
+            run_one audit --range "$range" "${common[@]}"
+            ;;
+          *) echo "::error::unknown command '$INPUT_COMMAND'"; exit 2 ;;
+        esac
+
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+        # Read the verdict with sed rather than a JSON library: `python3` is not
+        # on the Windows runner under that name, and `overall` is a top-level
+        # string in a pretty-printed document, so this is unambiguous.
+        overall="unknown"
+        if [ -f "$report" ]; then
+          found=$(sed -n 's/.*"overall"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p' "$report" | head -n1)
+          [ -n "$found" ] && overall="$found"
+        fi
+        echo "overall=$overall" >> "$GITHUB_OUTPUT"
+
+        # Exit codes 2 and 3 are usage and dependency errors. Those are never
+        # "just a warning" — the gate did not actually run — so they fail
+        # regardless of fail-on.
+        if [ $worst -ge 2 ]; then
+          echo "::error::GitBound could not complete (exit $worst)"
+          exit $worst
+        fi
+
+        case "$INPUT_FAIL_ON" in
+          never) exit 0 ;;
+          warning)
+            if [ "$overall" != "ok" ]; then
+              echo "::error::GitBound reported '$overall'"
+              exit 1
+            fi
+            ;;
+          *) exit $worst ;;
+        esac

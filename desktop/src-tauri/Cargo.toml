@@ -1,0 +1,22 @@
+[package]
+name = "gitbound-desktop"
+version = "1.0.0"
+edition = "2024"
+description = "GitBound desktop application"
+# The desktop app depends on the library by path with no version, so crates.io
+# could not accept it even if it were wanted there. Saying so keeps a workspace
+# publish from stopping on it.
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+gitbound = { path = "../.." }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+

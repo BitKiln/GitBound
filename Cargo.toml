@@ -1,0 +1,54 @@
+[package]
+name = "gitbound"
+version = "1.0.0"
+edition = "2024"
+description = "A safety-first local GitHub identity manager"
+license = "MIT"
+rust-version = "1.88"
+repository = "https://github.com/BitKiln/GitBound"
+homepage = "https://github.com/BitKiln/GitBound"
+documentation = "https://docs.rs/gitbound"
+readme = "README.md"
+keywords = ["git", "github", "identity", "ssh", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[workspace]
+members = ["desktop/src-tauri"]
+resolver = "2"
+
+# `cargo binstall gitbound` on a CI runner, so a pipeline does not need a Rust
+# toolchain just to run the gate. The names here must match the assets that
+# .github/workflows/release.yml publishes.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/gitbound-{ target }.{ archive-format }"
+pkg-fmt = "tgz"
+bin-dir = "gitbound{ binary-ext }"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+clap_complete = "4.5"
+dialoguer = "0.12"
+directories = "6.0"
+fs4 = "1.1"
+regex = "1.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3.20"
+toml = "1.1"
+url = "2.5"
+wait-timeout = "0.2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.1"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1

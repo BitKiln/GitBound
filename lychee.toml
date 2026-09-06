@@ -1,0 +1,38 @@
+# Link checking for the documentation.
+#
+# The docs link heavily to GitHub's own guides and to this repository's own
+# files, and a moved file breaks the second kind silently. The `links` job in
+# .github/workflows/ci.yml runs this configuration.
+
+# A link that is merely slow is not a broken link. Runners are shared and
+# github.com rate-limits, so retry rather than fail the pull request.
+max_retries = 3
+retry_wait_time = 3
+timeout = 20
+
+# Hitting the same host from every document at once is what triggers the rate
+# limiting in the first place.
+max_concurrency = 8
+
+# HEAD is cheaper, but several documentation sites answer it with 405.
+method = "get"
+
+# An empty user agent is refused by some of the hosts the docs link to.
+user_agent = "curl/8.0 (+https://github.com/BitKiln/GitBound)"
+
+# Cache between runs so an unchanged link is not re-fetched on every push.
+cache = true
+max_cache_age = "2d"
+
+# Anything that is not an error. 403 and 429 are included deliberately: sites
+# that block or throttle CI egress return them for links that are perfectly
+# valid in a browser, and treating that as breakage would fail the job for a
+# reason no contributor can fix.
+accept = ["200..=299", "403", "429"]
+
+exclude = [
+  # Addresses in examples, not real ones.
+  '^https?://(www\.)?example\.(com|org)',
+]
+
+exclude_path = ["target"]

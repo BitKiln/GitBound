@@ -1,0 +1,243 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    types: [opened, labeled, synchronize, reopened]
+
+# One run per branch at a time. Pushing a fix a minute after a typo used to
+# leave the first run grinding through a three-platform matrix for a commit
+# nobody will ever merge.
+#
+# Cancellation is limited to pull requests. A push to main or develop is the
+# integration record for that commit and runs to completion even if another
+# push follows it, so a green tick always refers to a commit that was actually
+# built rather than to whichever one happened to land last.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Housekeeping only. The checks below do not depend on this job: gating them
+  # on a label meant a pull request without one reported every check as
+  # `skipped`, and a skipped check never satisfies a required status check, so
+  # branch protection on `develop` would have blocked every pull request.
+  consume-run-ci:
+    if: >-
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'run-ci')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Remove one-shot CI label
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: >-
+          gh api --method DELETE
+          "repos/${{ github.repository }}/issues/${PR_NUMBER}/labels/run-ci"
+
+  # The frontend is hand-written, so the supply-chain risk npm audit used to
+  # cover no longer exists and the remaining risk is in the code itself.
+  #
+  # desktop/src-tauri/src/contract.rs is the authoritative check for every
+  # frontend invariant - markup parsing, inline script, data-k on form controls,
+  # icon names, and the IPC command surface - and it runs under `cargo test` on
+  # all three platforms. This job only front-runs the cheapest two so an obvious
+  # violation is reported in seconds rather than after a full compile.
+  frontend-invariants:
+    # Runs on every push and every pull request. The `run-ci` label is only a
+    # re-run trigger, so a `labeled` event for any other label is ignored here.
+    if: >-
+      github.event.action != 'labeled' ||
+      github.event.label.name == 'run-ci'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: No markup parsing or dynamic evaluation
+        run: |
+          # Strip comments first: they legitimately name these APIs when
+          # explaining why the code does not use them.
+          if sed 's://.*::' desktop/ui/js/*.js desktop/ui/js/views/*.js \
+              | grep -nE 'innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function'; then
+            echo "::error::markup-parsing or dynamic-eval API used in desktop/ui/js"
+            exit 1
+          fi
+      - name: No external assets and no inline handlers
+        run: |
+          if grep -nE 'src="https?:|href="https?://[^"]*\.(js|css)|onclick=|onload=' desktop/ui/index.html; then
+            echo "::error::desktop/ui/index.html references an external asset or an inline handler"
+            exit 1
+          fi
+
+  test:
+    # Runs on every push and every pull request. The `run-ci` label is only a
+    # re-run trigger, so a `labeled` event for any other label is ignored here.
+    if: >-
+      github.event.action != 'labeled' ||
+      github.event.label.name == 'run-ci'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/develop' }}
+      # Required by Tauri's webview, not by any JavaScript toolchain - there is
+      # no Node in this workflow at all.
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update &&
+          sudo apt-get install -y
+          libwebkit2gtk-4.1-dev
+          libappindicator3-dev
+          librsvg2-dev
+          patchelf
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # Includes the IPC-contract and frontend-invariant tests in
+      # desktop/src-tauri/src/contract.rs.
+      - run: cargo test --workspace --all-features
+      - name: Audit Rust dependencies
+        if: runner.os == 'Linux'
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          command: check
+      # Proves the whole application builds from cargo alone: no tauri CLI, no
+      # Node, with desktop/ui embedded into the binary by generate_context!.
+      - run: cargo build --release -p gitbound-desktop
+
+  format:
+    # Runs on every push and every pull request. The `run-ci` label is only a
+    # re-run trigger, so a `labeled` event for any other label is ignored here.
+    if: >-
+      github.event.action != 'labeled' ||
+      github.event.label.name == 'run-ci'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      # dprint replaces Prettier for JS/CSS/HTML/JSON/Markdown. It is a Rust
+      # binary, so the cargo-only rule still holds.
+      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+        with:
+          tool: dprint
+      - run: dprint check
+
+  # Cargo.toml declares rust-version = "1.88". Nothing verified it: every other
+  # job installs `stable`, so a feature stabilised after 1.88 would compile here
+  # and fail for anyone honouring the documented minimum.
+  msrv:
+    if: >-
+      github.event.action != 'labeled' ||
+      github.event.label.name == 'run-ci'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # 1.88
+        with:
+          toolchain: "1.88"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Install Linux desktop dependencies
+        run: >-
+          sudo apt-get update &&
+          sudo apt-get install -y
+          libwebkit2gtk-4.1-dev
+          libappindicator3-dev
+          librsvg2-dev
+          patchelf
+      - run: cargo check --workspace --all-features --all-targets
+
+  # Coverage is reported as an artifact rather than uploaded to a third party.
+  # This repository's threat model is about identity confusion, and adding an
+  # external service token to it buys a badge and costs a secret.
+  coverage:
+    if: >-
+      github.event.action != 'labeled' ||
+      github.event.label.name == 'run-ci'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+        with:
+          tool: cargo-llvm-cov
+      - name: Install Linux desktop dependencies
+        run: >-
+          sudo apt-get update &&
+          sudo apt-get install -y
+          libwebkit2gtk-4.1-dev
+          libappindicator3-dev
+          librsvg2-dev
+          patchelf
+      - run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+      - name: Summarise
+        run: cargo llvm-cov report --summary-only >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          if-no-files-found: error
+
+  # The action this repository publishes is executable content that other
+  # repositories run. Lint it like the rest of the code.
+  action-lint:
+    if: >-
+      github.event.action != 'labeled' ||
+      github.event.label.name == 'run-ci'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate action.yml
+        run: python3 .github/scripts/check_action.py
+      - name: Shell-check the composite steps
+        run: python3 .github/scripts/shellcheck_action.py
+
+  # Documentation links rot in two directions: an external guide moves, or one
+  # of our own files does. The second kind is silent -- nothing in the build
+  # reads a markdown link -- so it is checked here rather than by hand.
+  #
+  # Configuration lives in lychee.toml, including why 403 and 429 count as
+  # reachable.
+  links:
+    if: >-
+      github.event.action != 'labeled' ||
+      github.event.label.name == 'run-ci'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Restore the link cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .lycheecache
+          key: lychee-${{ github.sha }}
+          restore-keys: lychee-
+      - name: Check every link in the documentation
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: >-
+            --config lychee.toml
+            --cache
+            --no-progress
+            --verbose
+            "**/*.md"
+          fail: true

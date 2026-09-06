@@ -1,0 +1,77 @@
+name: Bug report
+description: Something GitBound did that it should not have.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        **Do not report a security issue here.** If a check reported OK when the
+        push would have gone out under the wrong identity, that is a security
+        bug — use the private advisory form linked from SECURITY.md instead.
+
+
+        Please do not paste tokens, private keys, or the contents of
+        `~/.ssh`. GitBound never needs them, and neither does this issue.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `gitbound --version`, or the version in the app's title bar.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did this happen?
+      options:
+        - CLI
+        - Desktop app
+        - CI (the GitHub Action or `verify`/`audit`)
+        - Git hook
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 24H2 / macOS 15.1 / Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Include the exit code if you have it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Smallest set of steps that reproduces it
+      render: console
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `gitbound doctor --json`
+      description: >
+        This reports config location, schema version, and whether git, gh, and
+        ssh are reachable. It contains no credentials.
+      render: json
+    validations:
+      required: false

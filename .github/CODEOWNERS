@@ -1,0 +1,22 @@
+# Default owner for everything.
+*                               @BitKiln
+
+# The safety-critical core: binding and rollback, the check engine, the
+# subprocess boundary, and the config store. A wrong answer in any of these is
+# the class of bug SECURITY.md says the project cares most about.
+/src/check.rs                   @BitKiln
+/src/git.rs                     @BitKiln
+/src/process.rs                 @BitKiln
+/src/config.rs                  @BitKiln
+/src/policy.rs                  @BitKiln
+
+# The frontend invariants live here: h() is the only DOM constructor, and the
+# IPC surface must match the Rust handler list.
+/desktop/ui/js/dom.js           @BitKiln
+/desktop/ui/js/ipc.js           @BitKiln
+/desktop/src-tauri/src/main.rs  @BitKiln
+/desktop/src-tauri/src/contract.rs @BitKiln
+
+# Executable content other repositories run, and the workflows that publish it.
+/action.yml                     @BitKiln
+/.github/                       @BitKiln

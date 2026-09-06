@@ -1,0 +1,65 @@
+name: CodeQL
+
+# The frontend under desktop/ui/js has never been statically analysed: the
+# `frontend-invariants` job in ci.yml greps for a handful of specific APIs, which
+# is a tripwire, not an analysis. CodeQL covers the rest, and covers the Rust
+# side as well.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # A new query pack can find something in code that has not changed, so run
+    # weekly rather than only on a diff.
+    - cron: "23 4 * * 1"
+
+# One run per branch at a time. Pushing a fix a minute after a typo used to
+# leave the first run grinding through a three-platform matrix for a commit
+# nobody will ever merge.
+#
+# Cancellation is limited to pull requests. A push to main or develop is the
+# integration record for that commit and runs to completion even if another
+# push follows it, so a green tick always refers to a commit that was actually
+# built rather than to whichever one happened to land last.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: rust
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # CodeQL's Rust extractor reads source; a toolchain is installed so it can
+      # resolve the workspace, but nothing is compiled and the Tauri system
+      # libraries are therefore not needed.
+      - if: matrix.language == 'rust'
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+
+      - uses: github/codeql-action/init@5ba2889ada762081db2c4f32a729827dce632c7b # v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-and-quality
+
+      - uses: github/codeql-action/analyze@5ba2889ada762081db2c4f32a729827dce632c7b # v3
+        with:
+          category: /language:${{ matrix.language }}

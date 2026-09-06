@@ -1,0 +1,40 @@
+# ci.yml treats a `run-ci` label as a one-shot re-run trigger, and nothing in the
+# repository created any labels at all. These are the ones the workflows and the
+# issue forms reference.
+
+rust:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "src/**"
+          - "Cargo.toml"
+          - "Cargo.lock"
+
+desktop:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "desktop/**"
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "desktop/ui/**"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+          - "action.yml"
+          - "deny.toml"
+          - "dprint.json"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - "docs/**"
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Cargo.lock"
+          - "deny.toml"

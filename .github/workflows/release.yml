@@ -1,0 +1,207 @@
+name: Release
+
+# Three things changed from the v1 workflow:
+#
+#   1. macOS and Linux are built, not only Windows. A tool whose own README says
+#      it supports three platforms should not ship binaries for one.
+#   2. The .msi and NSIS bundles reach the Release. They used to go to a workflow
+#      artifact, which expires and which nobody downloading the tool ever sees.
+#   3. The standalone CLI is published under a predictable name, because
+#      action.yml and `cargo binstall` both download it. Renaming these assets
+#      breaks every pipeline using the action, so treat the names as an API.
+#
+# Artifacts stay unsigned -- that is documented in SECURITY.md -- but every asset
+# now carries a build provenance attestation alongside its .sha256, which is
+# verifiable without a code-signing certificate.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: read
+        run: |
+          set -euo pipefail
+          # Cargo.toml is the single version literal for the CLI, and
+          # desktop/src-tauri/Cargo.toml for the app; tauri.conf.json omits
+          # `version` deliberately so it cannot drift from either.
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
+          desktop=$(sed -n 's/^version = "\(.*\)"/\1/p' desktop/src-tauri/Cargo.toml | head -n1)
+          if [ "$version" != "$desktop" ]; then
+            echo "::error::Cargo.toml is $version but desktop/src-tauri/Cargo.toml is $desktop"
+            exit 1
+          fi
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match crate version $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS is built for Apple Silicon only. The `macos-13` (Intel) pool is
+        # being wound down and jobs sat in it long enough to be cancelled,
+        # taking `publish` — which needs every leg — down with them. A release
+        # that does not happen serves Intel users worse than one that does not
+        # carry their architecture.
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: msi,nsis
+            archive: zip
+          - os: macos-14
+            target: aarch64-apple-darwin
+            bundles: dmg
+            archive: tar.gz
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+            archive: tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: >-
+          sudo apt-get update &&
+          sudo apt-get install -y
+          libwebkit2gtk-4.1-dev
+          libappindicator3-dev
+          librsvg2-dev
+          patchelf
+
+      # tauri-apps/tauri-action is deliberately not used. It detects the project
+      # shape from package.json and a lockfile, neither of which exists here.
+      - uses: taiki-e/install-action@7b8d4719ee4aaa279bdf55df38dacb9ebfe12a6c # v2.87.6
+        with:
+          tool: tauri-cli
+
+      - name: Build the CLI
+        run: cargo build --release --bin gitbound
+
+      - name: Build the desktop bundles
+        working-directory: desktop
+        run: cargo tauri build --bundles ${{ matrix.bundles }}
+
+      # Named for the target triple, because action.yml and cargo-binstall both
+      # construct this filename rather than searching for it.
+      - name: Package the CLI
+        id: cli
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          asset="gitbound-${TARGET}.${ARCHIVE}"
+          staging="$RUNNER_TEMP/stage"
+          mkdir -p "$staging"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp target/release/gitbound.exe "$staging/"
+          else
+            cp target/release/gitbound "$staging/"
+          fi
+          cp LICENSE NOTICE README.md "$staging/"
+          mkdir -p dist
+          if [ "$ARCHIVE" = "zip" ]; then
+            ( cd "$staging" && 7z a -tzip "$GITHUB_WORKSPACE/dist/$asset" . >/dev/null )
+          else
+            tar -czf "dist/$asset" -C "$staging" .
+          fi
+          echo "asset=$asset" >> "$GITHUB_OUTPUT"
+
+      - name: Collect the desktop bundles
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # The portable executable falls out of the plain cargo build; the rest
+          # come from the tauri bundler and live under target/release/bundle.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp "target/release/gitbound-desktop.exe" "dist/GitBound_${VERSION}_${TARGET}.exe"
+          else
+            cp "target/release/gitbound-desktop" "dist/GitBound_${VERSION}_${TARGET}" || true
+          fi
+          find target/release/bundle -maxdepth 2 -type f \
+            \( -name '*.msi' -o -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' -o -name '*-setup.exe' \) \
+            -exec cp {} dist/ \;
+          ls -la dist
+
+      - name: Checksum every asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          for file in *; do
+            case "$file" in *.sha256) continue ;; esac
+            if command -v sha256sum >/dev/null; then
+              sha256sum "$file" > "$file.sha256"
+            else
+              shasum -a 256 "$file" > "$file.sha256"
+            fi
+          done
+          ls -la
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # Required by attest-build-provenance.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            dist/*
+            !dist/*.sha256
+
+      - name: Publish a draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Drafts, so a human publishes. Release notes come from CHANGELOG.md
+          # rather than being generated, because the changelog is the thing the
+          # project actually maintains.
+          if ! gh release view "v$VERSION" >/dev/null 2>&1; then
+            gh release create "v$VERSION" --draft --title "GitBound v$VERSION" --notes ""
+          fi
+          gh release upload "v$VERSION" dist/* --clobber

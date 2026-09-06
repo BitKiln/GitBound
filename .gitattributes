@@ -1,0 +1,10 @@
+# Normalize to LF in the repository and check out LF on every platform.
+# Without this, the Windows CI runner (core.autocrlf=true) checks out CRLF and
+# `prettier --check`, which expects LF, fails on files that are correct in git.
+* text=auto eol=lf
+
+# Binary types git must not touch.
+*.png binary
+*.ico binary
+*.icns binary
+*.exe binary

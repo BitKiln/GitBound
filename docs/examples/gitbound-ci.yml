@@ -1,0 +1,56 @@
+# Example: gate a repository on commit identity.
+#
+# Copy this into `.github/workflows/` in the repository you want to protect, and
+# commit a `.gitbound.toml` next to it declaring who may author commits. See
+# docs/CI.md for the policy file format.
+
+name: Identity
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  identity:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Only needed for the SARIF upload below.
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `audit` compares a range, so it needs more than the tip commit.
+          # 0 fetches the whole history; a smaller depth works if your PRs are
+          # short, but a truncated history makes the base commit unreachable.
+          fetch-depth: 0
+
+      - id: gitbound
+        uses: BitKiln/GitBound@v1
+        with:
+          # Pin this. `latest` means a new release can change what your gate
+          # accepts without a commit in this repository.
+          version: "1.0.0"
+          command: both
+          enforce-signing: "false"
+          # This repository commits a policy, so refuse to pass if it ever goes
+          # missing. Without this a pull request that deletes .gitbound.toml
+          # turns the gate off and the run still reports success.
+          require-policy: "true"
+          sarif-file: gitbound.sarif
+
+      - name: Upload SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitbound.sarif
+          category: gitbound
+
+      - name: Report
+        if: always()
+        run: |
+          echo "GitBound verdict: ${{ steps.gitbound.outputs.overall }}"

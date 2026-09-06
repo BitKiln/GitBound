@@ -1,0 +1,30 @@
+name: Labeler
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+# Labelling the same pull request twice concurrently is pointless; keep the
+# newest.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      # pull_request_target runs with write access against the base repository,
+      # so this job must never check out or execute the pull request's code. It
+      # does neither: the labeler action reads the changed-file list through the
+      # API and applies labels, and nothing else runs here.
+      - uses: actions/labeler@8558fd74291d67161a8a78ce36a881fa63b766a9 # v5.0.0
+        with:
+          configuration-path: .github/labeler.yml
+          sync-labels: false

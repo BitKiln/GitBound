@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "GitBound",
+  "identifier": "dev.gitbound.desktop",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: data:; style-src 'self'; font-src 'self' data:; script-src 'self'"
+    },
+    "windows": [
+      {
+        "title": "GitBound",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 720,
+        "minHeight": 560,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "shortDescription": "Safety-first local GitHub identity manager",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

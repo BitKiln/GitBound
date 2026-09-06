@@ -1,0 +1,49 @@
+name: Feature request
+description: Something GitBound should be able to do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: >
+        `PRODUCT.md` lists what GitBound deliberately will not do — store
+        credentials, mutate global Git identity, manage `~/.ssh/config`, scan the
+        filesystem unprompted, or check the network without being asked. A
+        request that needs one of those is not automatically refused, but it does
+        need to argue for changing the boundary rather than around it.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation, not the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: How do you handle it today?
+      description: Including "I don't" — that is useful to know.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like GitBound to do?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface?
+      multiple: true
+      options:
+        - CLI
+        - Desktop app
+        - CI integration
+        - Git hooks
+        - Documentation
+    validations:
+      required: true

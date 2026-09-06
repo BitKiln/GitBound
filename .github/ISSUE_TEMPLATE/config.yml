@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/BitKiln/GitBound/security/advisories/new
+    about: >-
+      Report privately. A check that reports OK while the push would go out under
+      the wrong identity is a security bug, not an ordinary one.
+  - name: Question or usage help
+    url: https://github.com/BitKiln/GitBound/discussions
+    about: Start here if you are not sure whether something is a bug.
