@@ -112,8 +112,8 @@
     --surface-2: #202520;
     --surface-3: #2a302a;
     --text: #edf0ea;
-    --muted: #aeb6ad;
-    --faint: #7f887f;
+    --muted: #b8c0b7;
+    --faint: #939c92;
     --line: #343b34;
     --accent: #86b896;
     --accent-2: #a5c9b0;
@@ -146,8 +146,8 @@
   --surface-2: #202520;
   --surface-3: #2a302a;
   --text: #edf0ea;
-  --muted: #aeb6ad;
-  --faint: #7f887f;
+  --muted: #b8c0b7;
+  --faint: #939c92;
   --line: #343b34;
   --accent: #86b896;
   --accent-2: #a5c9b0;
@@ -404,8 +404,8 @@ button:disabled {
   font-weight: 650;
 }
 .primary {
-  background: var(--accent-2);
-  color: #f8fbf8;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .primary:hover {
   filter: brightness(1.08);
@@ -553,6 +553,7 @@ code {
   border-radius: 8px;
   background: var(--accent-soft);
   color: var(--accent-2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   display: grid;
   place-items: center;
   font-size: 11px;
