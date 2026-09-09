@@ -626,6 +626,10 @@ code {
   margin: 0;
   font-weight: 600;
   overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .detail-pane h3 {
   font-size: 12px;
@@ -1145,14 +1149,19 @@ select {
 }
 .safe-note {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  color: var(--muted);
-  background: var(--accent-soft);
-  padding: 10px;
-  border-radius: 7px;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  padding: 10px 14px;
+  border-radius: var(--radius-row);
   font-size: 12px;
-  margin: 12px 0;
+  margin: 14px 0 0;
+}
+.safe-note svg {
+  color: var(--accent);
+  flex-shrink: 0;
 }
 .setup-panel > .primary {
   width: 100%;
