@@ -112,8 +112,8 @@
     --surface-2: #202520;
     --surface-3: #2a302a;
     --text: #edf0ea;
-    --muted: #aeb6ad;
-    --faint: #7f887f;
+    --muted: #b8c0b7;
+    --faint: #939c92;
     --line: #343b34;
     --accent: #86b896;
     --accent-2: #a5c9b0;
@@ -146,8 +146,8 @@
   --surface-2: #202520;
   --surface-3: #2a302a;
   --text: #edf0ea;
-  --muted: #aeb6ad;
-  --faint: #7f887f;
+  --muted: #b8c0b7;
+  --faint: #939c92;
   --line: #343b34;
   --accent: #86b896;
   --accent-2: #a5c9b0;
@@ -404,8 +404,8 @@ button:disabled {
   font-weight: 650;
 }
 .primary {
-  background: var(--accent-2);
-  color: #f8fbf8;
+  background: var(--accent);
+  color: var(--on-accent);
 }
 .primary:hover {
   filter: brightness(1.08);
@@ -553,6 +553,7 @@ code {
   border-radius: 8px;
   background: var(--accent-soft);
   color: var(--accent-2);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   display: grid;
   place-items: center;
   font-size: 11px;
@@ -625,6 +626,10 @@ code {
   margin: 0;
   font-weight: 600;
   overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .detail-pane h3 {
   font-size: 12px;
@@ -1144,14 +1149,19 @@ select {
 }
 .safe-note {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  color: var(--muted);
-  background: var(--accent-soft);
-  padding: 10px;
-  border-radius: 7px;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  padding: 10px 14px;
+  border-radius: var(--radius-row);
   font-size: 12px;
-  margin: 12px 0;
+  margin: 14px 0 0;
+}
+.safe-note svg {
+  color: var(--accent);
+  flex-shrink: 0;
 }
 .setup-panel > .primary {
   width: 100%;
